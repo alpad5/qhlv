@@ -39,20 +39,32 @@ pub async fn save_object(
     obj: &Object,
     inactivity_ttl_secs: i64,
 ) -> Result<()> {
+    save_object_owned(con, obj, inactivity_ttl_secs, None).await
+}
+
+/// Like [`save_object`], optionally recording the SHA-256 hash of an owner token
+/// in the same write so an owned object is never visible without its owner.
+pub async fn save_object_owned(
+    con: &mut ConnectionManager,
+    obj: &Object,
+    inactivity_ttl_secs: i64,
+    owner_hash: Option<&str>,
+) -> Result<()> {
     let key = object_key(&obj.id);
+    let mut fields = vec![
+        ("id", obj.id.clone()),
+        ("point", serde_json::to_string(&obj.point)?),
+        ("payload", serde_json::to_string(&obj.payload)?),
+        ("created_at", obj.created_at.to_string()),
+        ("expires_at", obj.expires_at.to_string()),
+        ("last_activity", obj.last_activity.to_string()),
+        ("activity_count", obj.activity_count.to_string()),
+    ];
+    if let Some(hash) = owner_hash {
+        fields.push(("owner_hash", hash.to_string()));
+    }
     redis::pipe()
-        .hset_multiple(
-            &key,
-            &[
-                ("id", obj.id.clone()),
-                ("point", serde_json::to_string(&obj.point)?),
-                ("payload", serde_json::to_string(&obj.payload)?),
-                ("created_at", obj.created_at.to_string()),
-                ("expires_at", obj.expires_at.to_string()),
-                ("last_activity", obj.last_activity.to_string()),
-                ("activity_count", obj.activity_count.to_string()),
-            ],
-        )
+        .hset_multiple(&key, &fields)
         .expire(&key, inactivity_ttl_secs)
         .ignore()
         .query_async::<_, ()>(con)
@@ -119,6 +131,72 @@ pub async fn add_activity(
         .await?;
 
     Ok(result == 1)
+}
+
+/// Result of an owner-checked write.
+#[derive(Debug, PartialEq, Eq)]
+pub enum OwnerWrite {
+    Done,
+    /// The object is gone (expired or never existed).
+    NotFound,
+    /// The object has no owner, or the token hash does not match.
+    Forbidden,
+}
+
+/// Lua prelude shared by owner-checked writes. KEYS[1] is the object key and
+/// ARGV[1] the presented token hash. Doing the checks and the write in one
+/// script means an expired object is never resurrected by a late HSET and the
+/// owner check cannot race the write.
+const OWNER_GUARD: &str = r#"
+    if redis.call('EXISTS', KEYS[1]) == 0 then return 0 end
+    local stored = redis.call('HGET', KEYS[1], 'owner_hash')
+    if (not stored) or stored ~= ARGV[1] then return 2 end
+"#;
+
+fn owner_outcome(code: i64) -> OwnerWrite {
+    match code {
+        1 => OwnerWrite::Done,
+        2 => OwnerWrite::Forbidden,
+        _ => OwnerWrite::NotFound,
+    }
+}
+
+/// Replace an owned object's payload. Lifecycle fields and TTL are untouched.
+pub async fn update_payload_owned(
+    con: &mut ConnectionManager,
+    id: &str,
+    owner_hash: &str,
+    payload: &Value,
+) -> Result<OwnerWrite> {
+    let script = Script::new(&format!(
+        "{OWNER_GUARD} redis.call('HSET', KEYS[1], 'payload', ARGV[2]) return 1"
+    ));
+    let code: i64 = script
+        .key(object_key(id))
+        .arg(owner_hash)
+        .arg(serde_json::to_string(payload)?)
+        .invoke_async(con)
+        .await?;
+    Ok(owner_outcome(code))
+}
+
+/// Delete an owned object and its activities. The caller removes it from the
+/// space index.
+pub async fn delete_owned(
+    con: &mut ConnectionManager,
+    id: &str,
+    owner_hash: &str,
+) -> Result<OwnerWrite> {
+    let script = Script::new(&format!(
+        "{OWNER_GUARD} redis.call('DEL', KEYS[1], KEYS[2]) return 1"
+    ));
+    let code: i64 = script
+        .key(object_key(id))
+        .key(activities_key(id))
+        .arg(owner_hash)
+        .invoke_async(con)
+        .await?;
+    Ok(owner_outcome(code))
 }
 
 /// Fetch a single object by id, or `None` if its key is gone (expired).

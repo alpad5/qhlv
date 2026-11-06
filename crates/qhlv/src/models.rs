@@ -44,6 +44,16 @@ pub struct CreateObject {
     /// Space-defined locator (geo: `{lat,lng,noise_sigma?}`; semantic: `{text,...}`).
     /// Passed to `Space::locate` to derive the stored point.
     pub locator: Value,
+    /// Opt in to owner-token control. When true the response carries a one-time
+    /// `owner_token` and the object can later be edited or deleted with it.
+    #[serde(default)]
+    pub owned: bool,
+}
+
+/// Body of `PUT /objects/:id`: replaces the payload of an owned object.
+#[derive(Debug, Deserialize)]
+pub struct UpdateObject {
+    pub payload: Value,
 }
 
 /// Body of `POST /objects/:id/activities`.

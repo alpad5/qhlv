@@ -18,6 +18,12 @@ futures-util.workspace = true
 tracing.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
+# Owner tokens: only their SHA-256 hash is stored.
+sha2.workspace = true
 # Used by the built-in GeoSpace implementation.
 rand.workspace = true
 rand_distr.workspace = true
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"

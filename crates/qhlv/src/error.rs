@@ -12,6 +12,10 @@ pub enum Error {
     #[error("not found")]
     NotFound,
 
+    /// Missing or wrong owner token, or the object has no owner. Maps to 403.
+    #[error("forbidden")]
+    Forbidden,
+
     /// The client's payload or request failed validation. Maps to 422.
     #[error("validation error: {0}")]
     Validation(String),
@@ -34,6 +38,7 @@ impl IntoResponse for Error {
         match self {
             // Client-facing, safe to surface as-is.
             Error::NotFound => (StatusCode::NOT_FOUND, "not found").into_response(),
+            Error::Forbidden => (StatusCode::FORBIDDEN, "forbidden").into_response(),
             Error::Validation(msg) => (StatusCode::UNPROCESSABLE_ENTITY, msg).into_response(),
             // Internal failures: log the detail, return an opaque 500 to the client.
             Error::Redis(_) | Error::Json(_) | Error::Space(_) => {

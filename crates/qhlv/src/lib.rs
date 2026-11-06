@@ -37,13 +37,14 @@
 mod config;
 mod error;
 mod models;
+mod owner;
 mod routes;
 mod store;
 
 pub mod space;
 pub mod ws;
 
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::Router;
 use redis::aio::ConnectionManager;
 use serde_json::Value;
@@ -93,10 +94,15 @@ impl AppState {
 
 /// Build the qhlv HTTP + WebSocket router, ready to mount or serve.
 ///
-/// Routes: `POST /objects`, `POST /feed`, `POST|GET /objects/:id/activities`, `GET /ws`.
+/// Routes: `POST /objects`, `PUT|DELETE /objects/:id` (owned objects only),
+/// `POST /feed`, `POST|GET /objects/:id/activities`, `GET /ws`.
 pub fn router(state: AppState) -> Router {
     Router::new()
         .route("/objects", post(routes::objects::create))
+        .route(
+            "/objects/:id",
+            put(routes::objects::update).delete(routes::objects::delete),
+        )
         .route("/feed", post(routes::objects::feed))
         .route(
             "/objects/:id/activities",
