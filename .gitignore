@@ -1,0 +1,19 @@
+# Reference clone of the original app — not part of this workspace
+/hlv/
+
+# Rust
+/target/
+**/target/
+
+# Node
+node_modules/
+dist/
+build/
+
+# Env / local
+.env
+*.local
+
+# Session log (per hlv convention — never committed)
+HLV-LOG.md
+QHLV-LOG.md

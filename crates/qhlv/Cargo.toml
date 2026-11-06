@@ -1,0 +1,23 @@
+[package]
+name = "qhlv"
+version = "0.1.0"
+description = "Core engine for qhlv — anonymous, ephemeral, proximity-scoped, real-time objects."
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+axum.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+redis.workspace = true
+uuid.workspace = true
+tower-http.workspace = true
+futures-util.workspace = true
+tracing.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+# Used by the built-in GeoSpace implementation.
+rand.workspace = true
+rand_distr.workspace = true
